@@ -25,5 +25,8 @@
     "*.{json,md}": [
       "prettier --write"
     ]
+  },
+  "dependencies": {
+    "@eslint/js": "^10.0.1"
   }
 }
