@@ -31,6 +31,8 @@ _We need to define our relational data structures before building our backend AP
 - [ ] **2.3 Run Migrations**
   - Apply the schema to your local Docker PostgreSQL instance to verify it works.
 
+  [done].
+
 ## Step 3: Node.js Backend API (Express.js) Setup
 
 _Creating the core Express server that the frontend will interact with directly._
@@ -57,7 +59,7 @@ _Setting up the AI microservice that handles LangChain, Embeddings, and OpenAI i
 - [ ] **4.2 Implement Embedding & Indexing Endpoint**
   - Build `POST /embed` and `POST /index` endpoints.
   - Connect AI service to local ChromaDB.
-  - This endpoint should take text chunks, use `text-embedding-3-small` to embed them, and store them securely mapped to a `company_id` namespace.
+  - This endpoint should take text chunks, use `text-embedding-3-small` to embed them, ano a `company_id` namespace.
 - [ ] **4.3 Implement Query/RAG Pipeline Endpoint**
   - Build `POST /query`.
   - Extract query embeddings, perform cosine similarity search in ChromaDB.
@@ -66,7 +68,7 @@ _Setting up the AI microservice that handles LangChain, Embeddings, and OpenAI i
 
 ## Step 5: Background Worker (BullMQ + Node.js)
 
-_Processing files behind the scenes so the UI isn't blocked during heavy chunking/embedding operations._
+_Processing files behind the scenes so the UI d store them securely mapped tisn't blocked during heavy chunking/embedding operations._
 
 - [ ] **5.1 Initialize Worker Project (`worker/`)**
   - Setup Node.js project and connect it to Redis via `BullMQ`.

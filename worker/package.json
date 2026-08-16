@@ -1,0 +1,30 @@
+{
+  "name": "worker",
+  "version": "1.0.0",
+  "description": "Background worker for document processing in IntraAI",
+  "main": "src/index.ts",
+  "scripts": {
+    "dev": "nodemon src/index.ts",
+    "build": "tsc"
+  },
+  "dependencies": {
+    "@prisma/adapter-pg": "^7.6.0",
+    "@prisma/client": "^7.6.0",
+    "@types/pg": "^8.20.0",
+    "axios": "^1.7.9",
+    "bullmq": "^5.41.0",
+    "dotenv": "^17.3.1",
+    "ioredis": "^5.5.0",
+    "mammoth": "^1.9.1",
+    "pdf-parse": "^1.1.1",
+    "pg": "^8.20.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.1",
+    "@types/pdf-parse": "^1.1.4",
+    "nodemon": "^3.1.9",
+    "prisma": "^7.6.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.7.3"
+  }
+}

@@ -1,0 +1,5 @@
+{
+  "query": "What is machine learning?",
+  "company_id": "api-test-company-1",
+  "top_k": 2
+}

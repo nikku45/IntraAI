@@ -1,0 +1,796 @@
+ENGINEERING HANDBOOK
+Multi-Tenant AI Knowledge Base SaaS
+Complete Technical Architecture & Execution Blueprint
+Version 1.0  |  Confidential
+1. Project Overview
+1.1 Problem Statement
+Enterprise knowledge is siloed across PDFs, Word documents, Notion pages, Confluence wikis, and shared drives. Employees waste hours searching for answers that already exist internally. Traditional search (keyword-based) fails when documents are large, terminology varies, or context matters.
+Existing SaaS solutions like Guru, Notion AI, and Confluence AI are generic, expensive at scale, and don't offer true multi-tenant customization or white-labeling for B2B resale.
+1.2 Vision
+Build a production-grade, multi-tenant SaaS platform that transforms any company's document library into a conversational AI knowledge base — enabling employees to ask natural-language questions and receive precise, sourced answers drawn from internal documents only.
+1.3 Key Use Cases
+HR departments answering employee policy questions from the employee handbook
+Legal teams querying contracts and compliance documentation
+Engineering teams searching internal architecture docs, runbooks, and SOPs
+Sales teams querying product specs, pricing decks, and case studies
+Support teams answering customer queries from knowledge bases
+1.4 Multi-Tenant Considerations
+Every tenant (company) must be treated as a completely isolated data silo:
+Documents, users, queries, and embeddings are never shared across tenants
+Each tenant gets scoped vector DB namespace or collection isolation
+RBAC (Role-Based Access Control) is enforced per tenant
+Billing, quotas, and rate limits are enforced per tenant
+Tenant admins can manage their own users and documents
+2. System Architecture
+2.1 High-Level Architecture
+The system is decomposed into five major layers: Client, API Gateway, Core Services, AI/ML Layer, and Infrastructure. Each layer is independently deployable and scalable.
+DESIGN PRINCIPLE
+Each service owns its own data store and communicates via REST or async queues. No direct DB cross-talk between services.
+Architecture Layers
+Layer
+Components
+Technology
+Client Layer
+React SPA, Admin Dashboard
+Next.js, TailwindCSS
+API Gateway
+Request routing, auth validation, rate limiting
+NGINX + Node.js middleware
+Backend Services
+Auth, Document management, Chat, Admin
+Node.js + Express.js
+AI/ML Layer
+Embedding service, RAG pipeline, LLM orchestration
+Python + FastAPI + LangChain
+Worker Layer
+Async document processing, chunking, indexing
+Node.js + BullMQ + Redis
+Storage Layer
+Files, DB, Vector store, Cache
+S3, PostgreSQL, Chroma/pgvector, Redis
+2.2 Service Breakdown
+Frontend (Next.js)
+Company registration & onboarding flow
+User authentication (login, SSO)
+Document upload and management dashboard
+AI chat interface with streaming responses
+Admin panel (user management, usage analytics, billing)
+API Gateway (NGINX + Node.js)
+Single entry point for all client traffic
+JWT validation middleware before routing
+Rate limiting per tenant (Redis-backed counters)
+Routes to backend services or AI service
+SSL termination and request logging
+Backend Service (Node.js + Express.js)
+Auth module: registration, login, JWT issuance, refresh tokens
+Document module: upload, metadata storage, status tracking
+Chat module: session management, query dispatch to AI service
+Admin module: user CRUD, usage stats, quota enforcement
+Multi-tenant middleware: injects company_id on every request
+AI Service (Python + FastAPI)
+POST /embed — generate embedding for a text chunk
+POST /index — store vector in vector DB with tenant namespace
+POST /query — full RAG pipeline: embed query → search → prompt → LLM response
+POST /delete-namespace — purge all tenant vectors on account deletion
+Worker Service (Node.js + BullMQ)
+Listens for document_uploaded events from Redis queue
+Extracts text from PDF/DOCX/TXT
+Chunks text with overlap
+Calls AI service to generate embeddings and store vectors
+Updates document status in PostgreSQL
+2.3 End-to-End Data Flow
+Document Ingestion Flow
+User uploads PDF via frontend
+Backend stores file to S3, creates document record in PostgreSQL with status: pending
+Backend enqueues job to BullMQ: { documentId, companyId, s3Key }
+Worker picks up job, downloads file from S3
+Worker extracts text using pdf-parse / mammoth
+Worker splits text into chunks (1000 chars, 200 overlap)
+Worker calls AI service POST /embed for each chunk
+AI service generates embedding via OpenAI text-embedding-3-small
+AI service stores vector in Chroma with metadata: { chunkId, documentId, companyId, chunkText }
+Worker updates document status to indexed
+Query / RAG Flow
+User types question in chat interface
+Frontend sends POST /chat/query with { sessionId, query }
+Backend extracts companyId from JWT, calls AI service
+AI service embeds the query
+AI service performs vector similarity search in tenant namespace, retrieves top-K chunks
+AI service constructs prompt: system context + retrieved chunks + user question
+AI service calls OpenAI GPT-4o, streams response
+Backend streams response back to frontend via SSE
+Backend logs query + response to queries table for analytics
+3. Tech Stack Justification
+3.1 Frontend: Next.js
+Factor
+Decision
+Framework
+Next.js 14 (App Router)
+Chosen Over
+Vite+React SPA, Remix, Angular
+Why
+SSR for SEO on marketing pages, RSC for performance, file-based routing, built-in API routes for BFF pattern
+Styling
+TailwindCSS + shadcn/ui — no design system overhead, consistent tokens
+State
+Zustand for global state, React Query for server state and caching
+3.2 Backend: Node.js + Express.js
+Factor
+Decision
+Framework
+Express.js with modular router structure
+Chosen Over
+NestJS, Fastify, Hono
+Why NestJS was rejected
+Excessive boilerplate for an MVP; DI overhead; team velocity cost
+Why Express
+Minimal, well-understood, massive ecosystem, fastest to prototype and iterate
+Upgrade path
+Migrate to NestJS or Hono when team size exceeds 5 engineers on backend
+3.3 Python AI Stack
+Component
+Choice
+Reason
+Web framework
+FastAPI
+Async-native, auto OpenAPI docs, Pydantic validation
+LLM orchestration
+LangChain
+Mature RAG primitives, document loaders, chain abstractions
+Embeddings
+OpenAI text-embedding-3-small
+1536-dim, cheap ($0.02/1M tokens), best quality/cost ratio
+LLM
+GPT-4o (primary), GPT-3.5-turbo (fallback)
+GPT-4o: best reasoning; GPT-3.5: cost control for simple Q&A
+Alt: LlamaIndex
+Considered, rejected
+LangChain has better multi-tenant namespace abstractions
+3.4 Vector Database: Chroma → pgvector migration path
+STRATEGY
+Start with Chroma (self-hosted, zero-cost) for MVP. Migrate to pgvector (PostgreSQL extension) at 1,000+ tenants to consolidate infrastructure.
+Option
+Pros
+Cons
+Decision
+Chroma
+Free, easy local dev, Python native
+Not production-hardened, no managed hosting
+Use for MVP/development
+pgvector
+Reuses PostgreSQL, ACID, tenant isolation via schemas
+Slower ANN at scale vs dedicated
+Migrate to at scale
+Pinecone
+Managed, fast, battle-tested
+$70+/month minimum, vendor lock-in
+Consider at 10K+ tenants
+Weaviate
+Managed option, hybrid search
+Complex setup, cost
+Skip for now
+3.5 Primary Database: PostgreSQL
+ACID compliance critical for financial/billing data and document status tracking
+Row-level security (RLS) enables tenant isolation at DB layer
+pgvector extension allows future vector consolidation
+Rejected: MongoDB — lack of relational integrity for RBAC and billing relations
+3.6 Queue System: BullMQ + Redis
+BullMQ: mature Node.js queue library, built on Redis, supports retries / delays / priorities
+Redis: also serves as cache and rate-limit counter store
+Rejected: Kafka — extreme overkill for MVP; infrastructure complexity not warranted until 100K+ jobs/day
+Rejected: RabbitMQ — BullMQ provides equivalent guarantees with simpler ops footprint
+3.7 Storage: AWS S3 (or MinIO for local dev)
+S3: industry-standard object storage, 99.999999999% durability, cheap ($0.023/GB)
+Presigned URLs eliminate the need to proxy files through backend
+MinIO: S3-compatible self-hosted alternative for local development and CI
+3.8 Auth: Custom JWT + Optional Clerk
+Phase 1 MVP: custom JWT (access + refresh tokens), bcrypt for password hashing
+Phase 2: integrate Clerk for social OAuth (Google, GitHub, Microsoft SSO)
+Rejected: Auth0 / Firebase Auth — per-MAU pricing becomes expensive at scale
+4. Database Design
+4.1 Schema Overview
+TENANT ISOLATION
+Every user-facing table contains company_id as a foreign key. All queries MUST include WHERE company_id = $tenantId enforced at the service layer and optionally via PostgreSQL RLS policies.
+companies
+Column
+Type
+Notes
+id
+UUID PRIMARY KEY
+Globally unique tenant identifier
+name
+VARCHAR(255)
+Company display name
+slug
+VARCHAR(100) UNIQUE
+URL-safe identifier for routing
+plan
+ENUM(free, pro, enterprise)
+Billing tier
+max_users
+INTEGER
+Quota enforcement
+max_documents
+INTEGER
+Quota enforcement
+created_at
+TIMESTAMPTZ
+updated_at
+TIMESTAMPTZ
+users
+Column
+Type
+Notes
+id
+UUID PRIMARY KEY
+company_id
+UUID FK → companies
+Tenant isolation
+email
+VARCHAR(255) UNIQUE
+password_hash
+VARCHAR(255)
+bcrypt, nullable for OAuth users
+role
+ENUM(admin, member, viewer)
+RBAC enforcement
+is_active
+BOOLEAN DEFAULT true
+Soft deactivation
+last_login_at
+TIMESTAMPTZ
+created_at
+TIMESTAMPTZ
+documents
+Column
+Type
+Notes
+id
+UUID PRIMARY KEY
+company_id
+UUID FK → companies
+Tenant isolation
+uploaded_by
+UUID FK → users
+Audit trail
+name
+VARCHAR(500)
+Original filename
+s3_key
+VARCHAR(1000)
+S3 object path
+file_size
+BIGINT
+Bytes
+mime_type
+VARCHAR(100)
+application/pdf, etc.
+status
+ENUM(pending, processing, indexed, failed)
+Processing pipeline state
+chunk_count
+INTEGER
+Set after indexing
+error_message
+TEXT
+Populated if status=failed
+created_at
+TIMESTAMPTZ
+document_chunks
+Column
+Type
+Notes
+id
+UUID PRIMARY KEY
+document_id
+UUID FK → documents
+company_id
+UUID FK → companies
+Denormalized for query performance
+chunk_index
+INTEGER
+Order within document
+chunk_text
+TEXT
+Raw text content
+token_count
+INTEGER
+For context window management
+vector_id
+VARCHAR(255)
+ID in vector store (Chroma/pgvector)
+created_at
+TIMESTAMPTZ
+chat_sessions
+Column
+Type
+Notes
+id
+UUID PRIMARY KEY
+company_id
+UUID FK → companies
+Tenant isolation
+user_id
+UUID FK → users
+title
+VARCHAR(500)
+Auto-generated from first query
+created_at
+TIMESTAMPTZ
+updated_at
+TIMESTAMPTZ
+queries
+Column
+Type
+Notes
+id
+UUID PRIMARY KEY
+session_id
+UUID FK → chat_sessions
+company_id
+UUID FK → companies
+For analytics queries
+user_id
+UUID FK → users
+query_text
+TEXT
+response_text
+TEXT
+retrieved_chunk_ids
+UUID[]
+Array of chunks used
+model_used
+VARCHAR(100)
+e.g. gpt-4o
+tokens_used
+INTEGER
+For billing
+latency_ms
+INTEGER
+Performance tracking
+created_at
+TIMESTAMPTZ
+4.2 Indexing Strategy
+companies(slug) — unique index for slug-based routing
+users(email) — unique index for login lookups
+users(company_id) — for tenant-scoped user listings
+documents(company_id, status) — composite for dashboard queries
+document_chunks(document_id) — chunk retrieval per document
+queries(company_id, created_at DESC) — analytics time-series queries
+5. AI Architecture — RAG Pipeline
+5.1 RAG Pipeline Design
+CORE PRINCIPLE
+The model never hallucinates facts it doesn't have — it only answers from retrieved company documents. If no relevant chunks are found, the system responds: 'I could not find relevant information in your knowledge base.'
+Pipeline Stages
+Stage
+Description
+Implementation
+1. Ingestion
+PDF/DOCX → raw text
+pdf-parse, mammoth (Node.js)
+2. Chunking
+Text → fixed-size overlapping chunks
+LangChain RecursiveCharacterTextSplitter
+3. Embedding
+Chunk text → 1536-dim vector
+OpenAI text-embedding-3-small
+4. Indexing
+Vector + metadata → vector store
+Chroma with company namespace
+5. Query embedding
+User question → vector
+Same model as ingestion
+6. Retrieval
+Vector similarity search → top-K chunks
+Cosine similarity, K=5 default
+7. Reranking
+Optionally rerank retrieved chunks
+Cohere Reranker API (Phase 2)
+8. Prompt construction
+System prompt + context + query
+Jinja2 templates
+9. Generation
+LLM call → streamed answer
+GPT-4o with streaming
+10. Citation
+Map answer sentences to source chunks
+Phase 2 feature
+5.2 Chunking Strategy
+Primary: RecursiveCharacterTextSplitter — splits on paragraphs → sentences → words
+Chunk size: 1000 characters (~250 tokens) — fits comfortably in context with 5 chunks
+Overlap: 200 characters — prevents losing context across chunk boundaries
+Rejected: fixed token chunking — character-based is simpler and nearly as effective
+Phase 2: Semantic chunking — split on semantic similarity rather than character count
+5.3 Embedding Strategy
+Model: text-embedding-3-small (1536 dimensions, $0.02/1M tokens)
+Upgrade path: text-embedding-3-large (3072 dimensions) for higher accuracy
+All chunks from the same document use the same model version — stored in metadata
+Re-index all chunks when upgrading embedding model (worker job)
+5.4 Prompt Engineering
+System Prompt Template
+You are a helpful AI assistant for {company_name}.
+Answer questions ONLY using the context provided below.
+If the answer is not in the context, say: 'I could not find
+this information in your knowledge base.'
+Always be concise, accurate, and cite which document the
+information came from when possible.
+CONTEXT:
+{retrieved_chunks}
+QUESTION: {user_question}
+ANSWER:
+5.5 Context Window Management
+GPT-4o context window: 128K tokens (as of 2024)
+Each chunk: ~250 tokens. K=5 chunks = ~1,250 tokens of context.
+Reserve 2,000 tokens for response generation
+System prompt: ~200 tokens
+Total consumption: ~3,500 tokens per query — well within limits
+Token counting via tiktoken before sending to API — fail gracefully if over budget
+5.6 Model Selection Strategy
+Model
+Use case
+Cost
+When to use
+GPT-4o
+Complex multi-part queries
+$5/1M input, $15/1M output
+Default for all queries
+GPT-3.5-turbo
+Simple factual lookups
+$0.50/1M input
+Free tier tenants
+text-embedding-3-small
+All embeddings
+$0.02/1M tokens
+Always
+open-source (Mistral)
+Self-hosted option
+Infra cost only
+Enterprise on-premise deals
+5.7 Caching Strategy
+Query result cache: Redis with TTL=1hr. Key: hash(companyId + queryText)
+Embedding cache: If the same chunk text is re-embedded (e.g., after doc update), check cache first
+Cache invalidation: clear company's query cache on new document upload
+6. API Design
+6.1 REST vs GraphQL
+DECISION
+Use REST. GraphQL adds resolver complexity without meaningful benefit for this data model. The query patterns are well-defined and not highly variable.
+6.2 API Structure
+Method
+Endpoint
+Description
+Auth
+POST
+/api/v1/auth/register
+Company registration
+None
+POST
+/api/v1/auth/login
+User login, returns JWT
+None
+POST
+/api/v1/auth/refresh
+Refresh access token
+Refresh token
+GET
+/api/v1/auth/me
+Get current user profile
+JWT
+GET
+/api/v1/documents
+List company documents
+JWT
+POST
+/api/v1/documents/upload
+Upload new document
+JWT + admin/member
+DELETE
+/api/v1/documents/:id
+Delete document + vectors
+JWT + admin
+GET
+/api/v1/documents/:id/status
+Get processing status
+JWT
+POST
+/api/v1/chat/sessions
+Create new chat session
+JWT
+GET
+/api/v1/chat/sessions
+List user's chat sessions
+JWT
+POST
+/api/v1/chat/query
+Send query, stream response
+JWT
+GET
+/api/v1/admin/users
+List company users
+JWT + admin
+POST
+/api/v1/admin/users
+Invite new user
+JWT + admin
+GET
+/api/v1/admin/analytics
+Usage stats
+JWT + admin
+6.3 Versioning Strategy
+URL versioning: /api/v1/, /api/v2/ — explicit, cache-friendly, easy to deprecate
+Maintain v1 for minimum 12 months after v2 release
+Deprecation notices in response headers: Deprecation: true, Sunset: <date>
+6.4 Rate Limiting
+Plan
+Query limit
+Upload limit
+API calls/min
+Free
+50 queries/day
+10 docs/month
+20/min
+Pro
+1,000 queries/day
+100 docs/month
+100/min
+Enterprise
+Unlimited
+Unlimited
+500/min
+Rate limiting implemented with Redis sliding window counters. Key: rate:companyId:endpoint:minute.
+7. Security Design
+7.1 Tenant Isolation (Critical)
+Layer 1 — JWT: company_id is encoded in every JWT. Verified on every request in auth middleware.
+Layer 2 — Service layer: ALL database queries include WHERE company_id = req.tenantId
+Layer 3 — DB RLS: PostgreSQL Row Level Security policies as final safety net
+Layer 4 — Vector namespace: Chroma collection per company_id. Cross-namespace queries are impossible.
+Layer 5 — S3 paths: Documents stored under s3://bucket/tenants/{companyId}/ — S3 bucket policies enforce isolation
+CRITICAL
+A data leak between tenants is a catastrophic security failure. All five layers must function together. Never skip a layer for performance.
+7.2 Authentication Security
+Access tokens: 15-minute expiry. Short-lived to limit exposure on token theft.
+Refresh tokens: 7-day expiry, stored in httpOnly cookie (not localStorage).
+Token rotation: issue new refresh token on every refresh. Previous token invalidated.
+Refresh token family tracking: detect and block token reuse attacks.
+Password hashing: bcrypt with 12 rounds minimum.
+7.3 Document Security
+Files are never served directly. Always via presigned S3 URLs with 1-hour expiry.
+Virus scanning: ClamAV scan before document enters processing pipeline (Phase 2).
+File type validation: server-side MIME type detection (not client-declared Content-Type).
+Max file size enforced: 50MB default, configurable per tenant plan.
+7.4 API Security
+HTTPS only — HTTP redirects to HTTPS at NGINX layer.
+CORS: whitelist only known frontend origins.
+Helmet.js: sets security headers (CSP, HSTS, X-Frame-Options).
+Input validation: Zod schemas on all request bodies. Reject unknown fields.
+SQL injection: parameterized queries via Prisma ORM — never string interpolation.
+8. Worker & Queue Architecture
+8.1 Queue Design
+Queue Name
+Producer
+Consumer
+Purpose
+document_processing
+Backend API
+Worker service
+Async document ingestion
+embedding_generation
+Worker (internal)
+Worker (internal)
+Per-chunk embedding with rate limiting
+notification
+Worker service
+Backend API
+Webhook/email on completion
+8.2 Document Processing Job
+Job Payload
+{ documentId: uuid, companyId: uuid, s3Key: string, mimeType: string }
+Retry Strategy
+Max attempts: 3
+Backoff: exponential — 30s, 5min, 30min
+After max attempts: mark document status=failed, send notification, log error details
+Dead letter queue: failed jobs archived for 7 days for manual inspection
+8.3 Idempotency
+Jobs include documentId as idempotency key — duplicate jobs for same document are deduplicated
+Worker checks document status before processing — skips if already indexed
+Embedding insertion: upsert semantics on vector_id — safe to re-run
+9. DevOps & Deployment
+9.1 Local Development
+Repository Structure
+knowledge-base-saas/
+  frontend/          # Next.js application
+  backend/           # Node.js + Express.js API
+  ai-service/        # Python + FastAPI
+  worker/            # BullMQ document processor
+  infra/             # Docker, NGINX, IaC configs
+  shared/            # Shared types, schemas
+  scripts/           # Dev utilities
+docker-compose.yml   # Full local stack
+.env.example         # Template env vars
+Docker Compose Services (Local)
+Service
+Image
+Port
+frontend
+node:20-alpine
+3000
+backend
+node:20-alpine
+4000
+ai-service
+python:3.11-slim
+8000
+worker
+node:20-alpine
+—
+postgres
+postgres:16
+5432
+redis
+redis:7-alpine
+6379
+chroma
+chromadb/chroma
+8001
+nginx
+nginx:alpine
+80
+9.2 CI/CD Pipeline
+GitHub Actions Workflow
+PR opened → lint + unit tests run
+PR merged to main → integration tests + build Docker images
+Images pushed to ECR (AWS Elastic Container Registry)
+Staging environment auto-deploys from main
+Manual approval gate for production deploy
+Post-deploy health checks — rollback if /health returns non-200
+9.3 Production Deployment (AWS)
+Component
+AWS Service
+Notes
+Frontend
+Vercel or AWS CloudFront + S3
+CDN-served static assets
+Backend + Worker
+ECS Fargate
+Serverless containers, auto-scale
+AI Service
+ECS Fargate (GPU optional)
+Separate task definition
+PostgreSQL
+RDS PostgreSQL 16
+Multi-AZ for HA
+Redis
+ElastiCache Redis
+Cluster mode for scale
+Files
+S3 + CloudFront
+CDN for presigned URLs
+Secrets
+AWS Secrets Manager
+Never in env files or repos
+DNS
+Route 53
+SSL
+AWS ACM
+Free managed certs
+9.4 Monitoring & Observability
+Metrics: Prometheus + Grafana (request rate, latency P50/P95/P99, error rate, queue depth)
+Logs: Winston (Node.js) → CloudWatch Logs → structured JSON for querying
+Tracing: OpenTelemetry → Jaeger for distributed request tracing
+Alerts: PagerDuty for P0/P1 alerts (error rate > 1%, queue backlog > 1000 jobs)
+Uptime monitoring: Better Uptime or PagerDuty Synthetic
+10. Scalability Plan
+Scale
+Tenants
+Users
+Architecture changes
+MVP
+1–10
+1–100
+Single Docker Compose, single DB instance, Chroma local
+Early
+10–100
+100–5K
+ECS Fargate, RDS, ElastiCache, horizontal worker scaling
+Growth
+100–1K
+5K–100K
+Migrate to pgvector, read replicas, CDN, connection pooling (PgBouncer)
+Scale
+1K–10K
+100K–1M
+Sharding strategy, tenant-specific DB pools, Kafka for event streaming
+Enterprise
+10K+
+1M+
+Multi-region, dedicated clusters per large tenant, custom model fine-tuning
+10.1 Known Bottlenecks
+Vector search latency — mitigated by Chroma/pgvector HNSW indexing and query result caching
+OpenAI API rate limits — mitigated by request queuing, tenant-level rate limiting, and exponential backoff
+PDF parsing for very large files (500+ pages) — mitigated by chunked streaming extraction
+PostgreSQL connection limits — mitigated by PgBouncer connection pooler from Phase 2
+11. Step-by-Step Execution Plan
+Phase 1 — MVP (Weeks 1–2)
+GOAL
+Working auth, document upload, processing pipeline, and basic RAG chat. Single tenant focus.
+Set up monorepo with ESLint, Prettier, Husky pre-commit hooks
+PostgreSQL schema — companies, users, documents, document_chunks, chat_sessions, queries
+Backend: POST /auth/register, POST /auth/login, JWT middleware
+Backend: POST /documents/upload (multer + S3 upload + DB record)
+Worker: BullMQ consumer — extract text, chunk, call AI service, update status
+AI service: POST /embed, POST /index endpoints with Chroma
+AI service: POST /query — full RAG pipeline with streaming
+Backend: POST /chat/query — proxy to AI service, stream SSE to client
+Frontend: Login, document upload, basic chat interface
+Phase 2 — V1 (Weeks 3–5)
+GOAL
+Multi-tenant enforcement, RBAC, admin dashboard, production deployment.
+Strict multi-tenant middleware — company_id injection on all routes
+RBAC implementation — admin, member, viewer roles with route guards
+Admin dashboard — user management, document list, usage analytics
+Streaming responses — SSE or WebSocket for real-time chat
+Rate limiting — Redis sliding window per tenant
+Docker Compose → AWS ECS Fargate migration
+CI/CD pipeline — GitHub Actions + ECR + ECS deployment
+Monitoring — Prometheus + Grafana + CloudWatch
+Phase 3 — V2 (Weeks 6–8)
+GOAL
+Advanced AI features, citations, improved accuracy, billing.
+Reranking with Cohere Reranker for better chunk selection
+Citation mode — map answer sentences to source document + page
+Semantic chunking strategy
+Billing integration — Stripe, per-token usage tracking
+Document update handling — re-index changed documents
+Webhook support — notify external systems on indexing completion
+SSO support — Clerk integration for Google/Microsoft OAuth
+12. Coding Standards
+12.1 Folder Structure — Backend
+backend/src/
+  modules/
+    auth/          # routes, controllers, services, validators
+    documents/
+    chat/
+    admin/
+  middleware/      # auth, tenant, error, rate-limit
+  lib/             # db client, redis client, s3 client
+  config/          # env validation with Zod
+  types/           # shared TypeScript types
+  utils/           # helpers
+12.2 Naming Conventions
+Item
+Convention
+Example
+Files
+kebab-case
+document-service.ts
+Classes
+PascalCase
+DocumentService
+Functions/vars
+camelCase
+getDocumentById
+DB columns
+snake_case
+company_id
+Env vars
+SCREAMING_SNAKE_CASE
+DATABASE_URL
+API routes
+kebab-case
+/api/v1/chat-sessions
+12.3 Error Handling
+All errors extend a base AppError class with statusCode, code, and message
+Express global error handler catches all thrown errors and formats response
+Never expose stack traces in production responses
+All async route handlers wrapped in asyncHandler() utility to propagate errors
+Validation errors return 422 Unprocessable Entity with field-level error details
+13. Future Enhancements
+13.1 AI Agents
+Evolve the system from pure Q&A to autonomous task completion. An agent could: read documents → identify gaps → draft policy updates → route for approval. Built on LangGraph or CrewAI.
+13.2 Team-Specific Knowledge Scopes
+Within a company, teams (Engineering, Legal, HR) see only their department's documents. Implemented via document tags + RBAC policy + sub-namespace vector isolation.
+13.3 Real-Time Collaboration
+Multiple users in the same chat session, shared annotations on retrieved chunks, collaborative document review. Requires WebSocket infrastructure (Socket.io or Ably).
+13.4 Fine-Tuned Models
+For enterprise customers, fine-tune an open-source model (Mistral-7B, Llama-3) on their domain vocabulary. Reduces hallucination, improves terminology accuracy, and enables full on-premise deployment.
+13.5 Knowledge Graph
+Extract entity relationships from documents (people, projects, policies, dates) to build a company-specific knowledge graph. Enables relationship-aware queries: 'Who approved the Q3 procurement policy?'
