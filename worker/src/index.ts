@@ -1,4 +1,5 @@
 import 'dotenv/config';
+import http from 'http';
 import { Worker, Job } from 'bullmq';
 import IORedis from 'ioredis';
 import axios from 'axios';
@@ -10,11 +11,13 @@ import { prisma } from './prisma';
 import { splitText } from './splitter';
 
 // 1. Initialize our tools
-const connection = new IORedis({
-  host: process.env.REDIS_HOST || 'localhost',
-  port: parseInt(process.env.REDIS_PORT || '6379'),
-  maxRetriesPerRequest: null,
-});
+const connection = process.env.REDIS_URL
+  ? new IORedis(process.env.REDIS_URL, { maxRetriesPerRequest: null })
+  : new IORedis({
+      host: process.env.REDIS_HOST || 'localhost',
+      port: parseInt(process.env.REDIS_PORT || '6379'),
+      maxRetriesPerRequest: null,
+    });
 
 const AI_SERVICE_URL = process.env.AI_SERVICE_URL || 'http://localhost:8000';
 const UPLOADS_DIR = process.env.UPLOADS_DIR || path.resolve(__dirname, '../../backend/uploads');
@@ -125,3 +128,14 @@ worker.on('failed', (job, err) => {
 });
 
 console.log("🚀 Background Worker is alive and listening for tasks!");
+
+// Health check server for Render free web service compatibility
+const PORT = process.env.PORT || 10001;
+const healthServer = http.createServer((req, res) => {
+  res.writeHead(200, { 'Content-Type': 'application/json' });
+  res.end(JSON.stringify({ status: 'ok', service: 'intraai-worker' }));
+});
+healthServer.listen(PORT, () => {
+  console.log(`🩺 Worker health server running on port ${PORT}`);
+});
+

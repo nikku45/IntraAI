@@ -1,8 +1,10 @@
 services:
   # 1. Python FastAPI AI Service (ChromaDB + Gemini RAG)
+  # Render Free Tier: Web Service (free)
   - type: web
     name: intraai-ai-service
     env: python
+    plan: free
     rootDir: ai-service
     buildCommand: pip install -r requirements.txt
     startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
@@ -11,9 +13,11 @@ services:
         sync: false
 
   # 2. Node.js Express Backend API
+  # Render Free Tier: Web Service (free)
   - type: web
     name: intraai-backend
     env: node
+    plan: free
     rootDir: backend
     buildCommand: npm install && npm run build && npx prisma db push
     startCommand: npm start
@@ -25,40 +29,36 @@ services:
           name: intraai-postgres
           property: connectionString
       - key: REDIS_URL
-        fromService:
-          type: redis
-          name: intraai-redis
-          property: connectionString
+        sync: false  # Set your Upstash Redis URL (free at https://upstash.com)
       - key: AI_SERVICE_URL
         sync: false  # Set to https://intraai-ai-service.onrender.com after deploy
       - key: JWT_SECRET
         generateValue: true
 
   # 3. Node.js BullMQ Document Processing Worker
-  - type: worker
+  # Render Free Tier: Deployed as a web service (free) since workers are paid-only
+  - type: web
     name: intraai-worker
     env: node
+    plan: free
     rootDir: worker
     buildCommand: npm install && npm run build
     startCommand: npm start
     envVars:
+      - key: PORT
+        value: 10001
       - key: DATABASE_URL
         fromDatabase:
           name: intraai-postgres
           property: connectionString
       - key: REDIS_URL
-        fromService:
-          type: redis
-          name: intraai-redis
-          property: connectionString
+        sync: false  # Set your Upstash Redis URL (free at https://upstash.com)
       - key: AI_SERVICE_URL
         sync: false  # Set to https://intraai-ai-service.onrender.com after deploy
 
-# Databases & Caching Infrastructure
+# Databases (Render Free Tier: PostgreSQL free for 90 days)
 databases:
   - name: intraai-postgres
     databaseName: intraai_db
     user: admin
-
-# Redis Instance
-# (Can also be added manually as a Render Redis instance or Upstash Redis)
+    plan: free
