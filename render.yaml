@@ -30,10 +30,7 @@ services:
           name: intraai-redis
           property: connectionString
       - key: AI_SERVICE_URL
-        fromService:
-          type: web
-          name: intraai-ai-service
-          property: url
+        sync: false  # Set to https://intraai-ai-service.onrender.com after deploy
       - key: JWT_SECRET
         generateValue: true
 
@@ -55,10 +52,7 @@ services:
           name: intraai-redis
           property: connectionString
       - key: AI_SERVICE_URL
-        fromService:
-          type: web
-          name: intraai-ai-service
-          property: url
+        sync: false  # Set to https://intraai-ai-service.onrender.com after deploy
 
 # Databases & Caching Infrastructure
 databases:
