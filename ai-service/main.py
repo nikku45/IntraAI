@@ -33,13 +33,28 @@ else:
 # 4. Setup our Local "Translator" (The Embedding Model)
 # This is the "Engine" that turns text into vectors (lists of numbers).
 # It runs entirely on your CPU — no API keys needed!
-print("Loading local embedding model (all-MiniLM-L6-v2)...")
-local_ef = embedding_functions.SentenceTransformerEmbeddingFunction(
-    model_name="all-MiniLM-L6-v2"
-)
+print("Loading local embedding model...")
+try:
+    local_ef = embedding_functions.DefaultEmbeddingFunction()
+except Exception as e:
+    print(f"Default embedding function fallback: {e}")
+    local_ef = embedding_functions.SentenceTransformerEmbeddingFunction(
+        model_name="all-MiniLM-L6-v2"
+    )
+
 
 # 5. Connect to ChromaDB (Our Vector Storage)
-chroma_client = chromadb.PersistentClient(path="./chroma_db")
+# Uses HttpClient if CHROMA_HOST is defined (e.g., Docker), otherwise uses local PersistentClient
+CHROMA_HOST = os.getenv("CHROMA_HOST")
+CHROMA_PORT = int(os.getenv("CHROMA_PORT", "8000"))
+
+if CHROMA_HOST:
+    print(f"Connecting to remote ChromaDB at {CHROMA_HOST}:{CHROMA_PORT}...")
+    chroma_client = chromadb.HttpClient(host=CHROMA_HOST, port=CHROMA_PORT)
+else:
+    print("Using local persistent ChromaDB storage at ./chroma_db...")
+    chroma_client = chromadb.PersistentClient(path="./chroma_db")
+
 
 # ──────────────────────────────────────────────
 # Data Models (Like TypeScript Interfaces)
@@ -166,71 +181,25 @@ User Question: {data.query}
 
 Please provide a helpful answer based on the context above."""
 
-        # 4. Stream the response from Gemini (Google) if available, otherwise fallback
+        # 4. Stream the response from Gemini
         def generate():
-            """Generator function that streams the response from Gemini or falls back."""
-            # Prepare messages in a neutral format
-            messages = [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_message}
-            ]
-
-            # If google.genrativeai is available, try streaming
             if genai and GEMINI_API_KEY:
                 try:
-                    for event in genai.chat.stream(model=data.model, messages=messages, temperature=0.7):
-                        # Event can be a dict-like object; extract text content defensively
-                        text = None
-                        if isinstance(event, dict):
-                            # common field names: 'delta', 'message', 'content'
-                            if 'delta' in event and isinstance(event['delta'], dict):
-                                # delta may contain 'content' or 'text'
-                                text = event['delta'].get('content') or event['delta'].get('text')
-                            elif 'message' in event and isinstance(event['message'], dict):
-                                # message may have 'content' as list or string
-                                m = event['message']
-                                if isinstance(m.get('content'), list):
-                                    # concatenate text parts
-                                    parts = []
-                                    for c in m['content']:
-                                        if isinstance(c, dict) and 'text' in c:
-                                            parts.append(c['text'])
-                                    text = ''.join(parts) if parts else None
-                                else:
-                                    text = m.get('content')
-                        elif hasattr(event, 'delta'):
-                            d = getattr(event, 'delta')
-                            if isinstance(d, dict):
-                                text = d.get('content') or d.get('text')
-
-                        if text:
-                            # Send as SSE fragment
-                            yield f"data: {json.dumps(text)}\n\n"
+                    # Map standard model names to Gemini ones
+                    gemini_model = "gemini-3.6-flash"
+                    if "pro" in data.model.lower():
+                        gemini_model = "gemini-3.6-pro"
+                        
+                    model = genai.GenerativeModel(gemini_model)
+                    prompt = f"{system_prompt}\n\n{user_message}"
+                    
+                    response = model.generate_content(prompt, stream=True)
+                    for chunk in response:
+                        if chunk.text:
+                            yield f"data: {json.dumps(chunk.text)}\n\n"
                     return
                 except Exception as e:
                     print(f"Gemini streaming failed: {e}")
-
-            # Fallback: try a synchronous call (non-streaming) using genai.chat.create if available
-            try:
-                if genai and GEMINI_API_KEY:
-                    resp = genai.chat.create(model=data.model, messages=messages, temperature=0.7)
-                    # resp may contain 'candidates' or 'output' fields
-                    text_out = None
-                    if isinstance(resp, dict):
-                        # attempt common keys
-                        if 'candidates' in resp and len(resp['candidates']) > 0:
-                            cand = resp['candidates'][0]
-                            text_out = cand.get('content') or cand.get('output') or json.dumps(cand)
-                        elif 'output' in resp:
-                            text_out = resp['output']
-                    else:
-                        text_out = str(resp)
-
-                    if text_out:
-                        yield f"data: {json.dumps(text_out)}\n\n"
-                        return
-            except Exception as e:
-                print(f"Gemini non-streaming failed: {e}")
 
             # Last resort: error message
             yield f"data: {json.dumps('Error: no LLM available')}\n\n"

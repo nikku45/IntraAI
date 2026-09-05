@@ -151,11 +151,22 @@ export class ChatController {
       const { sessionId } = req.params;
       const userId = req.user!.userId;
 
+      const session = await prisma.chatSession.findFirst({
+        where: {
+          id: sessionId as string,
+          user_id: userId as string,
+        },
+      });
+
+      if (!session) {
+        return res.status(404).json({ message: 'Chat session not found' });
+      }
+
       // Retrieve all queries in this session
       const queries = await prisma.query.findMany({
         where: {
           session_id: sessionId as string,
-          user_id: userId as string, // Ensuring both are typed as single strings
+          user_id: userId as string,
         },
         orderBy: {
           created_at: 'asc',
@@ -164,6 +175,7 @@ export class ChatController {
 
       return res.status(200).json({
         sessionId,
+        session,
         messages: queries,
       });
     } catch (error: any) {
@@ -171,4 +183,58 @@ export class ChatController {
       return res.status(500).json({ message: 'Internal Server Error' });
     }
   }
+
+  /**
+   * Get all chat sessions for the authenticated user
+   */
+  static async getUserSessions(req: AuthRequest, res: Response): Promise<Response> {
+    try {
+      const userId = req.user!.userId;
+      const companyId = req.user!.companyId;
+
+      const sessions = await ChatService.getUserSessions(userId, companyId);
+      return res.status(200).json(sessions);
+    } catch (error: any) {
+      console.error('Error fetching chat sessions:', error);
+      return res.status(500).json({ message: 'Internal Server Error' });
+    }
+  }
+
+  /**
+   * Rename a chat session
+   */
+  static async renameSession(req: AuthRequest, res: Response): Promise<Response> {
+    try {
+      const { sessionId } = req.params;
+      const { title } = req.body;
+      const userId = req.user!.userId;
+
+      if (!title || typeof title !== 'string' || !title.trim()) {
+        return res.status(400).json({ message: 'Title is required' });
+      }
+
+      const updated = await ChatService.renameSession(sessionId as string, userId, title.trim());
+      return res.status(200).json(updated);
+    } catch (error: any) {
+      console.error('Error renaming session:', error);
+      return res.status(500).json({ message: error.message || 'Internal Server Error' });
+    }
+  }
+
+  /**
+   * Delete a chat session
+   */
+  static async deleteSession(req: AuthRequest, res: Response): Promise<Response> {
+    try {
+      const { sessionId } = req.params;
+      const userId = req.user!.userId;
+
+      await ChatService.deleteSession(sessionId as string, userId);
+      return res.status(200).json({ message: 'Session deleted successfully' });
+    } catch (error: any) {
+      console.error('Error deleting session:', error);
+      return res.status(500).json({ message: error.message || 'Internal Server Error' });
+    }
+  }
 }
+

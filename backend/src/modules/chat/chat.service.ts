@@ -116,6 +116,76 @@ export class ChatService {
   }
 
   /**
+   * Fetch all chat sessions for a specific user
+   */
+  static async getUserSessions(userId: string, companyId: string) {
+    const sessions = await prisma.chatSession.findMany({
+      where: {
+        user_id: userId,
+        company_id: companyId,
+      },
+      orderBy: {
+        updated_at: 'desc',
+      },
+      include: {
+        queries: {
+          take: 1,
+          orderBy: {
+            created_at: 'desc',
+          },
+          select: {
+            query_text: true,
+            created_at: true,
+          },
+        },
+      },
+    });
+
+    return sessions;
+  }
+
+  /**
+   * Rename a chat session
+   */
+  static async renameSession(sessionId: string, userId: string, title: string) {
+    const session = await prisma.chatSession.findFirst({
+      where: {
+        id: sessionId,
+        user_id: userId,
+      },
+    });
+
+    if (!session) {
+      throw new Error('Chat session not found or access denied');
+    }
+
+    return await prisma.chatSession.update({
+      where: { id: sessionId },
+      data: { title },
+    });
+  }
+
+  /**
+   * Delete a chat session and its queries
+   */
+  static async deleteSession(sessionId: string, userId: string) {
+    const session = await prisma.chatSession.findFirst({
+      where: {
+        id: sessionId,
+        user_id: userId,
+      },
+    });
+
+    if (!session) {
+      throw new Error('Chat session not found or access denied');
+    }
+
+    return await prisma.chatSession.delete({
+      where: { id: sessionId },
+    });
+  }
+
+  /**
    * Save the query and response to the database for history/audit
    */
   static async saveQuery(data: {
@@ -143,6 +213,26 @@ export class ChatService {
       },
     });
 
+    // Auto-update session title if it's currently 'New Chat'
+    const session = await prisma.chatSession.findUnique({
+      where: { id: data.sessionId },
+      select: { title: true },
+    });
+
+    const isDefaultTitle = !session?.title || session.title === 'New Chat';
+    const newTitle = isDefaultTitle
+      ? data.queryText.slice(0, 45).trim() + (data.queryText.length > 45 ? '...' : '')
+      : undefined;
+
+    await prisma.chatSession.update({
+      where: { id: data.sessionId },
+      data: {
+        updated_at: new Date(),
+        ...(newTitle ? { title: newTitle } : {}),
+      },
+    });
+
     return query;
   }
 }
+

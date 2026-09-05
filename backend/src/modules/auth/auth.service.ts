@@ -24,7 +24,7 @@ export class AuthService {
         const hashedPassword = await bcrypt.hash(password, 12);
 
         // 3. Create Company and User in ONE Transaction
-        const result = await prisma.$transaction(async (tx) => {
+        const result = await prisma.$transaction(async (tx: any) => {
             // Create Company
             const company = await tx.company.create({
                 data: {

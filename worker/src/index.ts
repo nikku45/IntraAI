@@ -47,10 +47,11 @@ const worker = new Worker(
 
       // 3. Extract Text based on file type
       let rawText = '';
-      if (filePath.endsWith('.pdf')) {
+      const lowerFilePath = filePath.toLowerCase();
+      if (lowerFilePath.endsWith('.pdf')) {
         const data = await pdf(fileBuffer);
         rawText = data.text;
-      } else if (filePath.endsWith('.docx')) {
+      } else if (lowerFilePath.endsWith('.docx')) {
         const result = await mammoth.extractRawText({ buffer: fileBuffer });
         rawText = result.value;
       } else {
@@ -97,14 +98,15 @@ const worker = new Worker(
       console.log(`🚀 Successfully indexed ${chunks.length} chunks for document ${documentId}`);
 
     } catch (error: any) {
-      console.error(`❌ Error processing document ${documentId}:`, error.message);
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      console.error(`❌ Error processing document ${documentId}:`, error);
 
       // Update DB to "failed" so the user knows what happened
       await prisma.document.update({
         where: { id: documentId },
         data: {
           status: 'failed',
-          error_message: error.message.replace(/\0/g, '')
+          error_message: errorMessage.replace(/\0/g, '')
         }
       });
 
