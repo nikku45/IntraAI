@@ -2,13 +2,11 @@ import { Queue } from 'bullmq';
 import IORedis from 'ioredis';
 
 // 1. Setup the connection to our Redis container
-const connection = process.env.REDIS_URL
-  ? new IORedis(process.env.REDIS_URL, { maxRetriesPerRequest: null })
-  : new IORedis({
-      host: process.env.REDIS_HOST || 'localhost',
-      port: parseInt(process.env.REDIS_PORT || '6379'),
-      maxRetriesPerRequest: null,
-    });
+const connection = new IORedis({
+  host: process.env.REDIS_HOST || 'localhost',
+  port: parseInt(process.env.REDIS_PORT || '6379'),
+  maxRetriesPerRequest: null, // Required by BullMQ
+});
 
 // 2. Define the name for our "Document Processing" queue
 export const DOCUMENT_QUEUE_NAME = 'document_processing';
