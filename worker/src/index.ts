@@ -10,11 +10,13 @@ import { prisma } from './prisma';
 import { splitText } from './splitter';
 
 // 1. Initialize our tools
-const connection = new IORedis({
-  host: process.env.REDIS_HOST || 'localhost',
-  port: parseInt(process.env.REDIS_PORT || '6379'),
-  maxRetriesPerRequest: null,
-});
+const connection = process.env.REDIS_URL
+  ? new IORedis(process.env.REDIS_URL, { maxRetriesPerRequest: null })
+  : new IORedis({
+      host: process.env.REDIS_HOST || 'localhost',
+      port: parseInt(process.env.REDIS_PORT || '6379'),
+      maxRetriesPerRequest: null,
+    });
 
 const AI_SERVICE_URL = process.env.AI_SERVICE_URL || 'http://localhost:8000';
 const UPLOADS_DIR = process.env.UPLOADS_DIR || path.resolve(__dirname, '../../backend/uploads');
