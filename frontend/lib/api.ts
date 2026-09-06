@@ -1,7 +1,8 @@
 import axios from 'axios';
 
 // 1. Define where our backend is living
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000/api/v1';
+const rawUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000/api/v1';
+const API_URL = rawUrl.endsWith('/api/v1') ? rawUrl : `${rawUrl.replace(/\/$/, '')}/api/v1`;
 
 // 2. Create an Axios "Instance"
 // This is like a dedicated messenger for our app that already knows where to go.
