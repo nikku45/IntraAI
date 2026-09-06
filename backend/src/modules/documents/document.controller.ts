@@ -20,11 +20,16 @@ export class DocumentController {
 
       let fileStorageKey = req.file.filename;
 
-      // 3. Upload to Cloudinary if configured
+      // 3. Upload to Cloudinary if configured (with automatic local disk fallback)
       if (process.env.CLOUDINARY_CLOUD_NAME) {
-        console.log(`☁️ Uploading "${req.file.originalname}" to Cloudinary...`);
-        fileStorageKey = await uploadToCloudinary(req.file.path);
-        console.log(`✅ Uploaded to Cloudinary: ${fileStorageKey}`);
+        try {
+          console.log(`☁️ Uploading "${req.file.originalname}" to Cloudinary...`);
+          fileStorageKey = await uploadToCloudinary(req.file.path);
+          console.log(`✅ Uploaded to Cloudinary: ${fileStorageKey}`);
+        } catch (err: any) {
+          console.warn(`⚠️ Cloudinary upload failed (${err?.message || err}). Falling back to local disk storage!`);
+          fileStorageKey = req.file.filename;
+        }
       }
 
       // 4. Hand it off to our Service to do the DB and Queue work

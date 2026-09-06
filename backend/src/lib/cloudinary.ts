@@ -13,23 +13,10 @@ cloudinary.config({
  */
 export async function uploadToCloudinary(localFilePath: string): Promise<string> {
   try {
-    let result;
-    try {
-      result = await cloudinary.uploader.upload(localFilePath, {
-        resource_type: 'auto',
-        folder: 'intraai-documents',
-      });
-    } catch (err: any) {
-      if (err?.http_code === 403 || err?.message?.includes('403')) {
-        console.warn('⚠️ Cloudinary 403 on auto, retrying with raw resource_type...');
-        result = await cloudinary.uploader.upload(localFilePath, {
-          resource_type: 'raw',
-          folder: 'intraai-documents',
-        });
-      } else {
-        throw err;
-      }
-    }
+    const result = await cloudinary.uploader.upload(localFilePath, {
+      resource_type: 'raw',
+      folder: 'intraai-documents',
+    });
 
     // Clean up local temp file after successful upload to Cloudinary
     if (fs.existsSync(localFilePath)) {
