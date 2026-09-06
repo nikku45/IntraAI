@@ -1,6 +1,7 @@
 import { Response } from 'express';
 import { AuthRequest } from '../../middleware/auth.middleware';
 import { DocumentService } from './document.service';
+import { uploadToCloudinary } from '../../lib/cloudinary';
 
 export class DocumentController {
   /**
@@ -14,14 +15,22 @@ export class DocumentController {
       }
 
       // 2. Extract user info (from our Auth Middleware!)
-      // Note: "!" tells TS we're SURE these exist (thanks to middleware)
       const userId = req.user!.userId;
       const companyId = req.user!.companyId;
 
-      // 3. Hand it off to our Service to do the DB and Queue work
+      let fileStorageKey = req.file.filename;
+
+      // 3. Upload to Cloudinary if configured
+      if (process.env.CLOUDINARY_CLOUD_NAME) {
+        console.log(`☁️ Uploading "${req.file.originalname}" to Cloudinary...`);
+        fileStorageKey = await uploadToCloudinary(req.file.path);
+        console.log(`✅ Uploaded to Cloudinary: ${fileStorageKey}`);
+      }
+
+      // 4. Hand it off to our Service to do the DB and Queue work
       const document = await DocumentService.uploadDocument({
         name: req.file.originalname,
-        s3_key: req.file.filename, // Name of the file on disk (unique UUID)
+        s3_key: fileStorageKey, // Stores Cloudinary URL or local file name
         fileSize: req.file.size,
         mimeType: req.file.mimetype,
         companyId: companyId,

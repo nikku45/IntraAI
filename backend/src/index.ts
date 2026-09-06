@@ -6,7 +6,6 @@ import { errorHandler } from './middleware/error.middleware';
 import authrouter from './modules/auth/auth.route';
 import documentRouter from './modules/documents/document.route';
 import chatRouter from './modules/chat/chat.route';
-import './lib/worker';
 
 const app: Express = express();
 const port = process.env.PORT || 4000;
